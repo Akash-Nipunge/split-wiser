@@ -1,0 +1,5 @@
+{
+  "name": "Splitwiser",
+  "description": "A simple expense splitting application to track who owes whom.",
+  "requestFramePermissions": []
+}
