@@ -2,11 +2,11 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
-import { connectToDatabase } from "./db.ts";
+import { connectToDatabase } from "./db.js";
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(cors());
   app.use(express.json());
@@ -40,6 +40,10 @@ async function startServer() {
       const user = await db.collection("users").findOne({ name: { $regex: new RegExp(`^${username}$`, "i") } });
       if (user && user.password === password) {
         const { password: _, ...userWithoutPassword } = user;
+        // Ensure role is present, default to 'user' if not
+        if (!userWithoutPassword.role) {
+          userWithoutPassword.role = userWithoutPassword.name.toLowerCase() === 'akash' ? 'admin' : 'user';
+        }
         res.json(userWithoutPassword);
       } else {
         res.status(401).json({ error: "Invalid username or password" });
@@ -67,6 +71,27 @@ async function startServer() {
       res.status(201).json(newExpense);
     } catch (error) {
       res.status(500).json({ error: "Failed to save expense" });
+    }
+  });
+
+  app.delete("/api/expenses/:id", async (req, res) => {
+    if (!db) return res.status(500).json({ error: "Database not connected" });
+    const { id } = req.params;
+    const { role } = req.query; // Simple role check from query for now
+
+    if (role !== 'admin') {
+      return res.status(403).json({ error: "Only admins can delete expenses" });
+    }
+
+    try {
+      const result = await db.collection("expenses").deleteOne({ id: id });
+      if (result.deletedCount === 1) {
+        res.json({ message: "Expense deleted successfully" });
+      } else {
+        res.status(404).json({ error: "Expense not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete expense" });
     }
   });
 
