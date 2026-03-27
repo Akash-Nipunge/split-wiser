@@ -2,7 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
-import { connectToDatabase } from "./db.js";
+import { connectToDatabase } from "./db.ts";
 
 async function startServer() {
   const app = express();
