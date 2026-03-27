@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'motion/react';
 interface UserData {
   id: string;
   name: string;
+  role?: string;
 }
 
 interface Expense {
@@ -25,13 +26,30 @@ interface Expense {
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState<UserData | null>(null);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
   const [users, setUsers] = useState<UserData[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string>('1');
+  const [currentUserId, setCurrentUserId] = useState<string>('');
+
+  // Session management: Load user from localStorage on mount
+  useEffect(() => {
+    const savedUser = localStorage.getItem('splitwiser_user');
+    if (savedUser) {
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        setUser(parsedUser);
+        setCurrentUserId(parsedUser.id);
+        setIsLoggedIn(true);
+      } catch (e) {
+        console.error('Failed to parse saved user', e);
+        localStorage.removeItem('splitwiser_user');
+      }
+    }
+  }, []);
 
   // Fetch data from backend
   useEffect(() => {
@@ -57,7 +75,7 @@ export default function App() {
   const [selectedSplitUsers, setSelectedSplitUsers] = useState<string[]>([]);
   const [fixedShares, setFixedShares] = useState<Record<string, string>>({});
 
-  const currentUser = useMemo(() => users.find(u => u.id === currentUserId), [users, currentUserId]);
+  const currentUser = useMemo(() => users.find(u => u.id === currentUserId) || user, [users, currentUserId, user]);
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -69,10 +87,13 @@ export default function App() {
       });
       
       if (response.ok) {
-        const user = await response.json();
-        setCurrentUserId(user.id);
+        const userData = await response.json();
+        setUser(userData);
+        setCurrentUserId(userData.id);
         setIsLoggedIn(true);
         setLoginError('');
+        // Save to localStorage for session management
+        localStorage.setItem('splitwiser_user', JSON.stringify(userData));
       } else {
         const errorData = await response.json();
         setLoginError(errorData.error || 'Invalid username or password (hint: use any user name and "password123")');
@@ -85,8 +106,11 @@ export default function App() {
 
   const handleLogout = () => {
     setIsLoggedIn(false);
+    setUser(null);
+    setCurrentUserId('');
     setLoginUsername('');
     setLoginPassword('');
+    localStorage.removeItem('splitwiser_user');
   };
 
   const calculatedShares = useMemo((): Record<string, number> => {
@@ -189,6 +213,27 @@ export default function App() {
       }
     } catch (error) {
       console.error('Failed to save expense to backend', error);
+    }
+  };
+
+  const handleDeleteExpense = async (id: string) => {
+    if (!user || user.role !== 'admin') return;
+    
+    if (!confirm('Are you sure you want to delete this expense?')) return;
+
+    try {
+      const response = await fetch(`/api/expenses/${id}?role=${user.role}`, {
+        method: 'DELETE',
+      });
+      if (response.ok) {
+        setExpenses(expenses.filter(e => e.id !== id));
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || 'Failed to delete expense');
+      }
+    } catch (error) {
+      console.error('Failed to delete expense', error);
+      alert('An error occurred while deleting the expense');
     }
   };
 
@@ -502,6 +547,9 @@ export default function App() {
                     <th className="px-6 py-4 text-[10px] uppercase font-bold text-[#8E9299] tracking-wider">Date</th>
                     <th className="px-6 py-4 text-[10px] uppercase font-bold text-[#8E9299] tracking-wider">Time</th>
                     <th className="px-6 py-4 text-[10px] uppercase font-bold text-[#8E9299] tracking-wider text-right">Amount</th>
+                    {user?.role === 'admin' && (
+                      <th className="px-6 py-4 text-[10px] uppercase font-bold text-[#8E9299] tracking-wider text-right">Action</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E5E5E5]">
@@ -541,11 +589,22 @@ export default function App() {
                           <td className="px-6 py-4 text-right">
                             <span className="font-mono font-bold text-[#1A1A1A]">${expense.amount.toFixed(2)}</span>
                           </td>
+                          {user?.role === 'admin' && (
+                            <td className="px-6 py-4 text-right">
+                              <button
+                                onClick={() => handleDeleteExpense(expense.id)}
+                                className="p-2 text-[#8E9299] hover:text-red-500 transition-colors"
+                                title="Delete expense"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </td>
+                          )}
                         </motion.tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={4} className="px-6 py-12 text-center text-[#8E9299] italic text-sm">
+                        <td colSpan={user?.role === 'admin' ? 5 : 4} className="px-6 py-12 text-center text-[#8E9299] italic text-sm">
                           No expenses recorded yet.
                         </td>
                       </tr>
